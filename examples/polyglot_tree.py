@@ -21,11 +21,10 @@ def print_tree(args: argparse.Namespace, visited: Set[int], level: int = 0) -> N
     visited.add(zobrist_hash)
 
     for entry in args.book.find_all(zobrist_hash):
-        print("{}├─ \033[1m{}\033[0m (weight: {}, learn: {})".format(
-            "|  " * level,
-            args.board.san(entry.move),
-            entry.weight,
-            entry.learn))
+        print(
+            f'{"|  " * level}├─ \033[1m{args.board.san(entry.move)}\033[0m (weight: {entry.weight}, learn: {entry.learn})'
+        )
+
 
         args.board.push(entry.move)
         print_tree(args, visited, level + 1)

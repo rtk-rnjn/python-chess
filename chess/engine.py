@@ -118,16 +118,11 @@ class EventLoopPolicy(asyncio.AbstractEventLoopPolicy):
         if sys.platform == "win32":
             raise NotImplementedError
 
-        try:
+        with contextlib.suppress(AttributeError, OSError):
             os.close(os.pidfd_open(os.getpid()))  # type: ignore
             watcher: asyncio.AbstractChildWatcher = asyncio.PidfdChildWatcher()  # type: ignore
             LOGGER.debug("Using PidfdChildWatcher")
             return watcher
-        except (AttributeError, OSError):
-            # Before Python 3.9 or before Linux 5.3 or the syscall is not
-            # permitted.
-            pass
-
         if threading.current_thread() is threading.main_thread():
             try:
                 watcher = asyncio.ThreadedChildWatcher()
@@ -710,27 +705,26 @@ class Mate(Score):
             return -mate_score - self.moves
 
     def wdl(self, *, model: _WdlModel = "sf", ply: int = 30) -> Wdl:
-        if model == "lichess":
-            cp = (21 - min(10, abs(self.moves))) * 100
-            wins = _lichess_raw_wins(cp)
-            return Wdl(wins, 0, 1000 - wins) if self.moves > 0 else Wdl(1000 - wins, 0, wins)
-        else:
+        if model != "lichess":
             return Wdl(1000, 0, 0) if self.moves > 0 else Wdl(0, 0, 1000)
+        cp = (21 - min(10, abs(self.moves))) * 100
+        wins = _lichess_raw_wins(cp)
+        return Wdl(wins, 0, 1000 - wins) if self.moves > 0 else Wdl(1000 - wins, 0, wins)
 
     def __str__(self) -> str:
         return f"#+{self.moves}" if self.moves > 0 else f"#-{abs(self.moves)}"
 
     def __repr__(self) -> str:
-        return "Mate({})".format(str(self).lstrip("#"))
+        return f'Mate({str(self).lstrip("#")})'
 
     def __neg__(self) -> Union[MateGivenType, Mate]:
-        return MateGiven if not self.moves else Mate(-self.moves)
+        return Mate(-self.moves) if self.moves else MateGiven
 
     def __pos__(self) -> Mate:
         return Mate(self.moves)
 
     def __abs__(self) -> Union[MateGivenType, Mate]:
-        return MateGiven if not self.moves else Mate(abs(self.moves))
+        return Mate(abs(self.moves)) if self.moves else MateGiven
 
 
 class MateGivenType(Score):
@@ -1259,7 +1253,7 @@ class BaseCommand(Generic[ProtocolT, T]):
         self.state = CommandState.DONE
 
     def _cancel(self, engine: ProtocolT) -> None:
-        if self.state != CommandState.CANCELLING and self.state != CommandState.DONE:
+        if self.state not in [CommandState.CANCELLING, CommandState.DONE]:
             assert self.state == CommandState.ACTIVE
             self.state = CommandState.CANCELLING
             self.cancel(engine)
@@ -1441,7 +1435,10 @@ class UciProtocol(Protocol):
         try:
             value = self.options[name].parse(value)
         except KeyError:
-            raise EngineError("engine does not support option {} (available options: {})".format(name, ", ".join(self.options)))
+            raise EngineError(
+                f'engine does not support option {name} (available options: {", ".join(self.options)})'
+            )
+
 
         if value is None or value != self.config.get(name):
             builder = ["setoption name", name]
@@ -1450,16 +1447,14 @@ class UciProtocol(Protocol):
             elif value is True:
                 builder.append("value true")
             elif value is not None:
-                builder.append("value")
-                builder.append(str(value))
-
+                builder.extend(("value", str(value)))
             self.send_line(" ".join(builder))
             self.config[name] = value
 
     def _configure(self, options: ConfigMapping) -> None:
         for name, value in collections.ChainMap(options, self.target_config).items():
             if name.lower() in MANAGED_OPTIONS:
-                raise EngineError("cannot set {} which is automatically managed".format(name))
+                raise EngineError(f"cannot set {name} which is automatically managed")
             self._setoption(name, value)
 
     async def configure(self, options: ConfigMapping) -> None:
@@ -1493,9 +1488,7 @@ class UciProtocol(Protocol):
         if uci_variant == "chess" and fen == chess.STARTING_FEN:
             builder.append("startpos")
         else:
-            builder.append("fen")
-            builder.append(fen)
-
+            builder.extend(("fen", fen))
         # Send moves.
         if not safe_history:
             LOGGER.warning("Not transmitting history with null moves to UCI engine")
@@ -1511,32 +1504,23 @@ class UciProtocol(Protocol):
         if ponder:
             builder.append("ponder")
         if limit.white_clock is not None:
-            builder.append("wtime")
-            builder.append(str(max(1, int(limit.white_clock * 1000))))
+            builder.extend(("wtime", str(max(1, int(limit.white_clock * 1000)))))
         if limit.black_clock is not None:
-            builder.append("btime")
-            builder.append(str(max(1, int(limit.black_clock * 1000))))
+            builder.extend(("btime", str(max(1, int(limit.black_clock * 1000)))))
         if limit.white_inc is not None:
-            builder.append("winc")
-            builder.append(str(int(limit.white_inc * 1000)))
+            builder.extend(("winc", str(int(limit.white_inc * 1000))))
         if limit.black_inc is not None:
-            builder.append("binc")
-            builder.append(str(int(limit.black_inc * 1000)))
+            builder.extend(("binc", str(int(limit.black_inc * 1000))))
         if limit.remaining_moves is not None and int(limit.remaining_moves) > 0:
-            builder.append("movestogo")
-            builder.append(str(int(limit.remaining_moves)))
+            builder.extend(("movestogo", str(int(limit.remaining_moves))))
         if limit.depth is not None:
-            builder.append("depth")
-            builder.append(str(max(1, int(limit.depth))))
+            builder.extend(("depth", str(max(1, int(limit.depth)))))
         if limit.nodes is not None:
-            builder.append("nodes")
-            builder.append(str(max(1, int(limit.nodes))))
+            builder.extend(("nodes", str(max(1, int(limit.nodes)))))
         if limit.mate is not None:
-            builder.append("mate")
-            builder.append(str(max(1, int(limit.mate))))
+            builder.extend(("mate", str(max(1, int(limit.mate)))))
         if limit.time is not None:
-            builder.append("movetime")
-            builder.append(str(max(1, int(limit.time * 1000))))
+            builder.extend(("movetime", str(max(1, int(limit.time * 1000)))))
         if infinite:
             builder.append("infinite")
         if root_moves is not None:
@@ -1875,11 +1859,11 @@ class UciOptionMap(MutableMapping[str, T]):
                 if key not in other or other[key] != value:  # type: ignore
                     return False
 
-            for key, value in other.items():  # type: ignore
-                if key not in self or self[key] != value:
-                    return False
+            return not any(
+                key not in self or self[key] != value
+                for key, value in other.items()
+            )
 
-            return True
         except (TypeError, AttributeError):
             return NotImplemented
 
@@ -1917,6 +1901,9 @@ class XBoardProtocol(Protocol):
         self.first_game = True
 
     async def initialize(self) -> None:
+
+
+
         class XBoardInitializeCommand(BaseCommand[XBoardProtocol, None]):
             def check_initialized(self, engine: XBoardProtocol) -> None:
                 if engine.initialized:
@@ -1995,12 +1982,13 @@ class XBoardProtocol(Protocol):
                 for option in engine.options.values():
                     if option.default is not None:
                         engine.config[option.name] = option.default
-                    if option.default is not None and not option.is_managed():
-                        engine.target_config[option.name] = option.default
+                        if not option.is_managed():
+                            engine.target_config[option.name] = option.default
 
                 engine.initialized = True
                 self.result.set_result(None)
                 self.set_finished()
+
 
         return await self.communicate(XBoardInitializeCommand)
 
@@ -2010,7 +1998,10 @@ class XBoardProtocol(Protocol):
     def _variant(self, variant: Optional[str]) -> None:
         variants = str(self.features.get("variants", "")).split(",")
         if not variant or variant not in variants:
-            raise EngineError("unsupported xboard variant: {} (available: {})".format(variant, ", ".join(variants)))
+            raise EngineError(
+                f'unsupported xboard variant: {variant} (available: {", ".join(variants)})'
+            )
+
 
         self.send_line(f"variant {variant}")
 
@@ -2093,6 +2084,8 @@ class XBoardProtocol(Protocol):
         if root_moves is not None:
             raise EngineError("play with root_moves, but xboard supports 'include' only in analysis mode")
 
+
+
         class XBoardPlayCommand(BaseCommand[XBoardProtocol, PlayResult]):
             def start(self, engine: XBoardProtocol) -> None:
                 self.play_result = PlayResult(None, None)
@@ -2126,9 +2119,15 @@ class XBoardProtocol(Protocol):
                 if limit.depth is not None:
                     engine.send_line(f"sd {max(1, int(limit.depth))}")
                 if limit.white_clock is not None:
-                    engine.send_line("{} {}".format("time" if board.turn else "otim", max(1, int(limit.white_clock * 100))))
+                    engine.send_line(
+                        f'{"time" if board.turn else "otim"} {max(1, int(limit.white_clock * 100))}'
+                    )
+
                 if limit.black_clock is not None:
-                    engine.send_line("{} {}".format("otim" if board.turn else "time", max(1, int(limit.black_clock * 100))))
+                    engine.send_line(
+                        f'{"otim" if board.turn else "time"} {max(1, int(limit.black_clock * 100))}'
+                    )
+
 
                 if draw_offered and engine.features.get("draw", 1):
                     engine.send_line("draw")
@@ -2225,6 +2224,7 @@ class XBoardProtocol(Protocol):
                 if not self.result.done():
                     super().engine_terminated(engine, exc)
 
+
         return await self.communicate(XBoardPlayCommand)
 
     async def analysis(self, board: chess.Board, limit: Optional[Limit] = None, *, multipv: Optional[int] = None, game: object = None, info: Info = INFO_ALL, root_moves: Optional[Iterable[chess.Move]] = None, options: ConfigMapping = {}) -> AnalysisResult:
@@ -2233,6 +2233,8 @@ class XBoardProtocol(Protocol):
 
         if limit is not None and (limit.white_clock is not None or limit.black_clock is not None):
             raise EngineError("xboard analysis does not support clock limits")
+
+
 
         class XBoardAnalysisCommand(BaseCommand[XBoardProtocol, AnalysisResult]):
             def start(self, engine: XBoardProtocol) -> None:
@@ -2278,8 +2280,7 @@ class XBoardProtocol(Protocol):
                 post_info = _parse_xboard_post(line, engine.board, info)
                 self.analysis.post(post_info)
 
-                pv = post_info.get("pv")
-                if pv:
+                if pv := post_info.get("pv"):
                     self.best_move = pv[0]
 
                 if limit is not None:
@@ -2320,6 +2321,7 @@ class XBoardProtocol(Protocol):
 
                 self.analysis.set_exception(exc)
 
+
         return await self.communicate(XBoardAnalysisCommand)
 
     def _setoption(self, name: str, value: ConfigValue) -> None:
@@ -2333,10 +2335,10 @@ class XBoardProtocol(Protocol):
 
         self.config[name] = value = option.parse(value)
 
-        if name in ["random", "computer"]:
+        if name in {"random", "computer"}:
             # Applied in _new.
             pass
-        elif name in ["memory", "cores"] or name.startswith("egtpath "):
+        elif name in {"memory", "cores"} or name.startswith("egtpath "):
             self.send_line(f"{name} {value}")
         elif value is None:
             self.send_line(f"option {name}")

@@ -157,7 +157,7 @@ class PieceTestCase(unittest.TestCase):
         d1 = chess.Piece(chess.BISHOP, chess.WHITE)
         d2 = chess.Piece(chess.BISHOP, chess.WHITE)
 
-        self.assertEqual(len(set([a, b, c, d1, d2])), 3)
+        self.assertEqual(len({a, b, c, d1, d2}), 3)
 
         self.assertEqual(a, d1)
         self.assertEqual(d1, a)
@@ -225,9 +225,9 @@ class BoardTestCase(unittest.TestCase):
 
     def test_from_epd(self):
         base_epd = "rnbqkb1r/ppp1pppp/5n2/3P4/8/8/PPPP1PPP/RNBQKBNR w KQkq -"
-        board, ops = chess.Board.from_epd(base_epd + " ce 55;")
+        board, ops = chess.Board.from_epd(f"{base_epd} ce 55;")
         self.assertEqual(ops["ce"], 55)
-        self.assertEqual(board.fen(), base_epd + " 0 1")
+        self.assertEqual(board.fen(), f"{base_epd} 0 1")
 
     def test_move_making(self):
         board = chess.Board()
@@ -1243,7 +1243,7 @@ class BoardTestCase(unittest.TestCase):
         board = chess.Board(fen)
 
         # Repeat the position up to the fourth time.
-        for i in range(3):
+        for _ in range(3):
             board.push_san("Be2")
             self.assertFalse(board.is_fivefold_repetition())
             board.push_san("Ne4")
@@ -1701,6 +1701,9 @@ class LegalMoveGeneratorTestCase(unittest.TestCase):
         self.assertIn("e8d7", repr(board.pseudo_legal_moves))
 
     def test_traverse_once(self):
+
+
+
         class MockBoard:
             def __init__(self):
                 self.traversals = 0
@@ -1708,7 +1711,7 @@ class LegalMoveGeneratorTestCase(unittest.TestCase):
             def generate_legal_moves(self):
                 self.traversals += 1
                 return
-                yield
+
 
         board = MockBoard()
         gen = chess.LegalMoveGenerator(board)
@@ -1932,7 +1935,7 @@ class PolyglotTestCase(unittest.TestCase):
             # White decides between short castling and long castling at this
             # turning point in the Queen's Gambit Declined, Exchange Variation.
             pos = chess.Board("r1bqr1k1/pp1nbppp/2p2n2/3p2B1/3P4/2NBP3/PPQ1NPPP/R3K2R w KQ - 5 10")
-            moves = set(entry.move for entry in book.find_all(pos))
+            moves = {entry.move for entry in book.find_all(pos)}
             self.assertIn(pos.parse_san("O-O"), moves)
             self.assertIn(pos.parse_san("O-O-O"), moves)
             self.assertIn(pos.parse_san("h3"), moves)
@@ -1941,7 +1944,7 @@ class PolyglotTestCase(unittest.TestCase):
             # Black usually castles long at this point in the Ruy Lopez,
             # Exchange Variation.
             pos = chess.Board("r3k1nr/1pp1q1pp/p1pb1p2/4p3/3PP1b1/2P1BN2/PP1N1PPP/R2Q1RK1 b kq - 4 9")
-            moves = set(entry.move for entry in book.find_all(pos))
+            moves = {entry.move for entry in book.find_all(pos)}
             self.assertIn(pos.parse_san("O-O-O"), moves)
             self.assertEqual(len(moves), 1)
 
@@ -2136,10 +2139,10 @@ class PgnTestCase(unittest.TestCase):
         node = chess.pgn.Game()
         node.add_variation(e4)
         node.add_variation(d4)
-        self.assertEqual(list(variation.move for variation in node.variations), [e4, d4])
+        self.assertEqual([variation.move for variation in node.variations], [e4, d4])
 
         node.promote_to_main(d4)
-        self.assertEqual(list(variation.move for variation in node.variations), [d4, e4])
+        self.assertEqual([variation.move for variation in node.variations], [d4, e4])
 
     def test_read_game(self):
         with open("data/pgn/kasparov-deep-blue-1997.pgn") as pgn:
@@ -2777,19 +2780,20 @@ class PgnTestCase(unittest.TestCase):
         self.assertEqual(node.turn(), chess.BLACK)
 
     def test_skip_inner_variation(self):
+
+
+
         class BlackVariationsOnly(chess.pgn.GameBuilder):
             def begin_variation(self):
                 self.skipping = self.variation_stack[-1].turn() != chess.WHITE
-                if self.skipping:
-                    return chess.pgn.SKIP
-                else:
-                    return super().begin_variation()
+                return chess.pgn.SKIP if self.skipping else super().begin_variation()
 
             def end_variation(self):
                 if self.skipping:
                     self.skipping = False
                 else:
                     return super().end_variation()
+
 
         pgn = "1. e4 e5 ( 1... d5 2. exd5 Qxd5 3. Nc3 ( 3. c4 ) 3... Qa5 ) *"
         expected_pgn = "1. e4 e5 ( 1... d5 2. exd5 Qxd5 3. Nc3 Qa5 ) *"
@@ -3614,7 +3618,10 @@ class SyzygyTestCase(unittest.TestCase):
 
     def test_suicide_tablenames(self):
         # Test the number of 6-piece tables.
-        self.assertEqual(sum(1 for eg in chess.syzygy.tablenames(one_king=False) if len(eg) == 7), 5754)
+        self.assertEqual(
+            sum(len(eg) == 7 for eg in chess.syzygy.tablenames(one_king=False)),
+            5754,
+        )
 
     def test_normalize_tablename(self):
         names = set(chess.syzygy.tablenames())
@@ -3624,7 +3631,7 @@ class SyzygyTestCase(unittest.TestCase):
                 f"Already normalized {name}")
 
             w, b = name.split("v", 1)
-            swapped = b + "v" + w
+            swapped = f"{b}v{w}"
             self.assertTrue(
                 chess.syzygy.normalize_tablename(swapped) in names,
                 f"Normalized {swapped}")
@@ -3633,7 +3640,7 @@ class SyzygyTestCase(unittest.TestCase):
         self.assertEqual(chess.syzygy.normalize_tablename("KNNvKBB"), "KBBvKNN")
 
     def test_dependencies(self):
-        self.assertEqual(set(chess.syzygy.dependencies("KBNvK")), set(["KBvK", "KNvK"]))
+        self.assertEqual(set(chess.syzygy.dependencies("KBNvK")), {"KBvK", "KNvK"})
 
     def test_get_wdl_get_dtz(self):
         with chess.syzygy.Tablebase() as tables:
@@ -3866,10 +3873,7 @@ class GaviotaTestCase(unittest.TestCase):
                 board, extra = chess.Board.from_epd(epd)
 
                 # Check DTM.
-                if extra["dm"] > 0:
-                    expected = extra["dm"] * 2 - 1
-                else:
-                    expected = extra["dm"] * 2
+                expected = extra["dm"] * 2 - 1 if extra["dm"] > 0 else extra["dm"] * 2
                 dtm = self.tablebase.probe_dtm(board)
                 self.assertEqual(dtm, expected, f"Expecting dtm {expected} for {board.fen()}, got {dtm} (at line {line + 1})")
 
@@ -3886,10 +3890,7 @@ class GaviotaTestCase(unittest.TestCase):
                 board, extra = chess.Board.from_epd(epd)
 
                 # Check DTM.
-                if extra["dm"] > 0:
-                    expected = extra["dm"] * 2 - 1
-                else:
-                    expected = extra["dm"] * 2
+                expected = extra["dm"] * 2 - 1 if extra["dm"] > 0 else extra["dm"] * 2
                 dtm = self.tablebase.probe_dtm(board)
                 self.assertEqual(dtm, expected, f"Expecting dtm {expected} for {board.fen()}, got {dtm} (at line {line + 1})")
 

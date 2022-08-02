@@ -24,13 +24,19 @@ def parse_epd(epd: str, VariantBoard: Type[chess.Board]) -> Tuple[chess.Board, s
 
     if "am" in epd_info:
         am = typing.cast(List[chess.Move], epd_info["am"])
-        description = "{} (avoid {})".format(description, " and ".join(board.san(m) for m in am))
+        description = (
+            f'{description} (avoid {" and ".join((board.san(m) for m in am))})'
+        )
+
     else:
         am = []
 
     if "bm" in epd_info:
         bm = typing.cast(List[chess.Move], epd_info["bm"])
-        description = "{} (expect {})".format(description, " or ".join(board.san(m) for m in bm))
+        description = (
+            f'{description} (expect {" or ".join((board.san(m) for m in bm))})'
+        )
+
     else:
         bm = []
 
@@ -46,10 +52,7 @@ async def test_epd(engine: chess.engine.Protocol, epd: str, VariantBoard: Type[c
     if not result.move:
         print(f"{description}: -- | +0")
         return 0.0
-    elif result.move in am:
-        print(f"{description}: {board.san(result.move)} | +0")
-        return 0.0
-    elif bm and result.move not in bm:
+    elif result.move in am or bm and result.move not in bm:
         print(f"{description}: {board.san(result.move)} | +0")
         return 0.0
     else:
@@ -66,16 +69,14 @@ async def test_epd_with_fractional_scores(engine: chess.engine.Protocol, epd: st
     analysis = await engine.analysis(board, game=object())
 
     with analysis:
-        for step in range(0, 4):
+        for step in range(4):
             await asyncio.sleep(movetime / 4)
 
             # Assess the current principal variation.
             if "pv" in analysis.info and len(analysis.info["pv"]) >= 1:
                 move = analysis.info["pv"][0]
                 print(board.san(move), end=" ", flush=True)
-                if move in am:
-                    continue  # fail
-                elif bm and move not in bm:
+                if move in am or bm and move not in bm:
                     continue  # fail
                 else:
                     score = 1.0 / (4 - step)

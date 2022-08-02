@@ -400,11 +400,11 @@ def _attack_table(deltas: List[int]) -> Tuple[List[Bitboard], List[Dict[Bitboard
     attack_table = []
 
     for square in SQUARES:
-        attacks = {}
-
         mask = _sliding_attacks(square, 0, deltas) & ~_edges(square)
-        for subset in _carry_rippler(mask):
-            attacks[subset] = _sliding_attacks(square, subset, deltas)
+        attacks = {
+            subset: _sliding_attacks(square, subset, deltas)
+            for subset in _carry_rippler(mask)
+        }
 
         attack_table.append(attacks)
         mask_table.append(mask)
@@ -526,7 +526,7 @@ class Move:
         The UCI representation of a null move is ``0000``.
         """
         if self.drop:
-            return piece_symbol(self.drop).upper() + "@" + SQUARE_NAMES[self.to_square]
+            return f"{piece_symbol(self.drop).upper()}@{SQUARE_NAMES[self.to_square]}"
         elif self.promotion:
             return SQUARE_NAMES[self.from_square] + SQUARE_NAMES[self.to_square] + piece_symbol(self.promotion)
         elif self:
@@ -555,12 +555,12 @@ class Move:
         """
         if uci == "0000":
             return cls.null()
-        elif len(uci) == 4 and "@" == uci[1]:
+        elif len(uci) == 4 and uci[1] == "@":
             drop = PIECE_SYMBOLS.index(uci[0].lower())
             square = SQUARE_NAMES.index(uci[2:])
             return cls(square, square, drop=drop)
         elif 4 <= len(uci) <= 5:
-            from_square = SQUARE_NAMES.index(uci[0:2])
+            from_square = SQUARE_NAMES.index(uci[:2])
             to_square = SQUARE_NAMES.index(uci[2:4])
             promotion = PIECE_SYMBOLS.index(uci[4]) if len(uci) == 5 else None
             if from_square == to_square:
@@ -672,8 +672,7 @@ class BaseBoard:
 
     def piece_at(self, square: Square) -> Optional[Piece]:
         """Gets the :class:`piece <chess.Piece>` at the given square."""
-        piece_type = self.piece_type_at(square)
-        if piece_type:
+        if piece_type := self.piece_type_at(square):
             mask = BB_SQUARES[square]
             color = bool(self.occupied_co[WHITE] & mask)
             return Piece(piece_type, color)
@@ -929,11 +928,7 @@ class BaseBoard:
         empty = 0
 
         for square in SQUARES_180:
-            piece = self.piece_at(square)
-
-            if not piece:
-                empty += 1
-            else:
+            if piece := self.piece_at(square):
                 if empty:
                     builder.append(str(empty))
                     empty = 0
@@ -941,6 +936,8 @@ class BaseBoard:
                 if promoted and BB_SQUARES[square] & self.promoted:
                     builder.append("~")
 
+            else:
+                empty += 1
             if BB_SQUARES[square] & BB_FILE_H:
                 if empty:
                     builder.append(str(empty))
@@ -1018,10 +1015,10 @@ class BaseBoard:
         """
         Gets a dictionary of :class:`pieces <chess.Piece>` by square index.
         """
-        result = {}
-        for square in scan_reversed(self.occupied & mask):
-            result[square] = typing.cast(Piece, self.piece_at(square))
-        return result
+        return {
+            square: typing.cast(Piece, self.piece_at(square))
+            for square in scan_reversed(self.occupied & mask)
+        }
 
     def _set_piece_map(self, pieces: Mapping[Square, Piece]) -> None:
         self._clear_board()
@@ -1045,7 +1042,7 @@ class BaseBoard:
         n, bb = divmod(n, 4)
         n, q = divmod(n, 6)
 
-        for n1 in range(0, 4):
+        for n1 in range(4):
             n2 = n + (3 - n1) * (4 - n1) // 2 - 5
             if n1 < n2 and 1 <= n2 <= 4:
                 break
@@ -1065,7 +1062,7 @@ class BaseBoard:
 
         # Knights.
         self.knights = BB_EMPTY
-        for i in range(0, 8):
+        for i in range(8):
             if i not in used:
                 if n1 == 0 or n2 == 0:
                     self.knights |= BB_FILES[i] & BB_BACKRANKS
@@ -1074,7 +1071,7 @@ class BaseBoard:
                 n2 -= 1
 
         # RKR.
-        for i in range(0, 8):
+        for i in range(8):
             if i not in used:
                 self.rooks = BB_FILES[i] & BB_BACKRANKS
                 used.append(i)
@@ -1145,7 +1142,6 @@ class BaseBoard:
         n0f = False
         n1f = False
         rf = 0
-        n0s = [0, 4, 7, 9]
         for square in range(A1, H1 + 1):
             bb = BB_SQUARES[square]
             if bb & self.queens:
@@ -1175,6 +1171,7 @@ class BaseBoard:
 
         if n0 < 4 and n1f and qf:
             cc_pos += q * 16
+            n0s = [0, 4, 7, 9]
             krn = n0s[n0] + n1
             cc_pos += krn * 96
             return cc_pos
@@ -1188,9 +1185,7 @@ class BaseBoard:
         builder = []
 
         for square in SQUARES_180:
-            piece = self.piece_at(square)
-
-            if piece:
+            if piece := self.piece_at(square):
                 builder.append(piece.symbol())
             else:
                 builder.append(".")
@@ -1214,13 +1209,7 @@ class BaseBoard:
         builder = []
         for rank_index in range(7, -1, -1):
             if borders:
-                builder.append("  ")
-                builder.append("-" * 17)
-                builder.append("\n")
-
-                builder.append(RANK_NAMES[rank_index])
-                builder.append(" ")
-
+                builder.extend(("  ", "-" * 17, "\n", RANK_NAMES[rank_index], " "))
             for file_index in range(8):
                 square_index = square(file_index, rank_index)
 
@@ -1229,9 +1218,7 @@ class BaseBoard:
                 elif file_index > 0:
                     builder.append(" ")
 
-                piece = self.piece_at(square_index)
-
-                if piece:
+                if piece := self.piece_at(square_index):
                     builder.append(piece.unicode_symbol(invert_color=invert_color))
                 else:
                     builder.append(empty_square)
@@ -1243,11 +1230,7 @@ class BaseBoard:
                 builder.append("\n")
 
         if borders:
-            builder.append("  ")
-            builder.append("-" * 17)
-            builder.append("\n")
-            builder.append("   a b c d e f g h")
-
+            builder.extend(("  ", "-" * 17, "\n", "   a b c d e f g h"))
         return "".join(builder)
 
     def _repr_svg_(self) -> str:
@@ -1619,12 +1602,11 @@ class Board(BaseBoard):
 
     def root(self: BoardT) -> BoardT:
         """Returns a copy of the root position."""
-        if self._stack:
-            board = type(self)(None, chess960=self.chess960)
-            self._stack[0].restore(board)
-            return board
-        else:
+        if not self._stack:
             return self.copy(stack=False)
+        board = type(self)(None, chess960=self.chess960)
+        self._stack[0].restore(board)
+        return board
 
     def ply(self) -> int:
         """
@@ -1923,20 +1905,14 @@ class Board(BaseBoard):
 
     def is_checkmate(self) -> bool:
         """Checks if the current position is a checkmate."""
-        if not self.is_check():
-            return False
-
-        return not any(self.generate_legal_moves())
+        return not any(self.generate_legal_moves()) if self.is_check() else False
 
     def is_stalemate(self) -> bool:
         """Checks if the current position is a stalemate."""
         if self.is_check():
             return False
 
-        if self.is_variant_end():
-            return False
-
-        return not any(self.generate_legal_moves())
+        return False if self.is_variant_end() else not any(self.generate_legal_moves())
 
     def is_insufficient_material(self) -> bool:
         """
@@ -2303,13 +2279,16 @@ class Board(BaseBoard):
         if not castling_rights:
             return "-"
 
-        builder = []
+        builder = [
+            FILE_NAMES[square_file(square)].upper()
+            for square in scan_reversed(castling_rights & BB_RANK_1)
+        ]
 
-        for square in scan_reversed(castling_rights & BB_RANK_1):
-            builder.append(FILE_NAMES[square_file(square)].upper())
 
-        for square in scan_reversed(castling_rights & BB_RANK_8):
-            builder.append(FILE_NAMES[square_file(square)])
+        builder.extend(
+            FILE_NAMES[square_file(square)]
+            for square in scan_reversed(castling_rights & BB_RANK_8)
+        )
 
         return "".join(builder)
 
@@ -2337,10 +2316,7 @@ class Board(BaseBoard):
 
                 builder.append(ch.upper() if color == WHITE else ch)
 
-        if builder:
-            return "".join(builder)
-        else:
-            return "-"
+        return "".join(builder) if builder else "-"
 
     def has_pseudo_legal_en_passant(self) -> bool:
         """Checks if there is a pseudo-legal en passant capture."""
@@ -2558,17 +2534,16 @@ class Board(BaseBoard):
         if self.ep_square:
             return None
 
-        if not ignore_turn:
-            if self.turn != WHITE:
-                return None
+        if not ignore_turn and self.turn != WHITE:
+            return None
 
-        if not ignore_castling:
-            if self.clean_castling_rights() != self.rooks:
-                return None
+        if not ignore_castling and self.clean_castling_rights() != self.rooks:
+            return None
 
-        if not ignore_counters:
-            if self.fullmove_number != 1 or self.halfmove_clock != 0:
-                return None
+        if not ignore_counters and (
+            self.fullmove_number != 1 or self.halfmove_clock != 0
+        ):
+            return None
 
         return super().chess960_pos()
 
@@ -2589,9 +2564,7 @@ class Board(BaseBoard):
             if operand is None:
                 epd.append(";")
             elif isinstance(operand, Move):
-                epd.append(" ")
-                epd.append(self.san(operand))
-                epd.append(";")
+                epd.extend((" ", self.san(operand), ";"))
             elif isinstance(operand, int):
                 epd.append(f" {operand};")
             elif isinstance(operand, float):
@@ -2600,19 +2573,25 @@ class Board(BaseBoard):
             elif opcode == "pv" and not isinstance(operand, str) and hasattr(operand, "__iter__"):
                 position = self.copy(stack=False)
                 for move in operand:
-                    epd.append(" ")
-                    epd.append(position.san_and_push(move))
+                    epd.extend((" ", position.san_and_push(move)))
                 epd.append(";")
             elif opcode in ["am", "bm"] and not isinstance(operand, str) and hasattr(operand, "__iter__"):
                 for san in sorted(self.san(move) for move in operand):
-                    epd.append(" ")
-                    epd.append(san)
+                    epd.extend((" ", san))
                 epd.append(";")
             else:
-                # Append as escaped string.
-                epd.append(" \"")
-                epd.append(str(operand).replace("\\", "\\\\").replace("\t", "\\t").replace("\r", "\\r").replace("\n", "\\n").replace("\"", "\\\""))
-                epd.append("\";")
+                epd.extend(
+                    (
+                        " \"",
+                        str(operand)
+                        .replace("\\", "\\\\")
+                        .replace("\t", "\\t")
+                        .replace("\r", "\\r")
+                        .replace("\n", "\\n")
+                        .replace("\"", "\\\""),
+                        "\";",
+                    )
+                )
 
         return "".join(epd)
 

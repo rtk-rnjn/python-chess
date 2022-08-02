@@ -10,7 +10,7 @@ import chess
 def main(bench_only: bool = False) -> None:
     board = chess.Board.empty(chess960=True)
 
-    for scharnagl in range(0, 960):
+    for scharnagl in range(960):
         board.set_chess960_pos(scharnagl)
 
         if not bench_only:

@@ -279,10 +279,11 @@ class GameNode(abc.ABC):
         Checks if this node is the first variation from the point of view of its
         parent. The root node is also in the main variation.
         """
-        if not self.parent:
-            return True
-
-        return not self.parent.variations or self.parent.variations[0] == self
+        return (
+            not self.parent.variations or self.parent.variations[0] == self
+            if self.parent
+            else True
+        )
 
     def __getitem__(self, move: Union[int, chess.Move, GameNode]) -> ChildNode:
         try:
@@ -379,7 +380,7 @@ class GameNode(abc.ABC):
 
         # Merge comment and NAGs.
         if node.comment:
-            node.comment += " " + comment
+            node.comment += f" {comment}"
         else:
             node.comment = comment
 
@@ -449,8 +450,10 @@ class GameNode(abc.ABC):
         """
         arrows = []
         for match in ARROWS_REGEX.finditer(self.comment):
-            for group in match.group(1).split(","):
-                arrows.append(chess.svg.Arrow.from_pgn(group))
+            arrows.extend(
+                chess.svg.Arrow.from_pgn(group)
+                for group in match.group(1).split(",")
+            )
 
         return arrows
 
@@ -479,7 +482,7 @@ class GameNode(abc.ABC):
             prefix += f"[%cal {','.join(cal)}]"
 
         if prefix:
-            self.comment = prefix + " " + self.comment if self.comment else prefix
+            self.comment = f"{prefix} {self.comment}" if self.comment else prefix
 
     def clock(self) -> Optional[float]:
         """
@@ -870,9 +873,8 @@ class Headers(MutableMapping[str, str]):
     def variant(self) -> Type[chess.Board]:
         if "Variant" not in self or self.is_chess960() or self.is_wild():
             return chess.Board
-        else:
-            from chess.variant import find_variant
-            return find_variant(self["Variant"])
+        from chess.variant import find_variant
+        return find_variant(self["Variant"])
 
     def board(self) -> chess.Board:
         VariantBoard = self.variant()
@@ -892,10 +894,7 @@ class Headers(MutableMapping[str, str]):
             self._others[key] = value
 
     def __getitem__(self, key: str) -> str:
-        if key in TAG_ROSTER:
-            return self._tag_roster[key]
-        else:
-            return self._others[key]
+        return self._tag_roster[key] if key in TAG_ROSTER else self._others[key]
 
     def __delitem__(self, key: str) -> None:
         if key in TAG_ROSTER:
@@ -1295,23 +1294,23 @@ class StringExporterMixin:
 
     def visit_nag(self, nag: int) -> None:
         if self.comments and (self.variations or not self.variation_depth):
-            self.write_token("$" + str(nag) + " ")
+            self.write_token(f"${nag} ")
 
     def visit_move(self, board: chess.Board, move: chess.Move) -> None:
         if self.variations or not self.variation_depth:
             # Write the move number.
             if board.turn == chess.WHITE:
-                self.write_token(str(board.fullmove_number) + ". ")
+                self.write_token(f"{str(board.fullmove_number)}. ")
             elif self.force_movenumber:
-                self.write_token(str(board.fullmove_number) + "... ")
+                self.write_token(f"{str(board.fullmove_number)}... ")
 
             # Write the SAN.
-            self.write_token(board.san(move) + " ")
+            self.write_token(f"{board.san(move)} ")
 
             self.force_movenumber = False
 
     def visit_result(self, result: str) -> None:
-        self.write_token(result + " ")
+        self.write_token(f"{result} ")
 
 
 class StringExporter(StringExporterMixin, BaseVisitor[str]):
@@ -1483,14 +1482,12 @@ def read_game(handle: TextIO, *, Visitor: Any = GameBuilder) -> Any:
         consecutive_empty_lines = 0
 
         if not skipping_game:
-            tag_match = TAG_REGEX.match(line)
-            if tag_match:
-                visitor.visit_header(tag_match.group(1), tag_match.group(2))
-                if unmanaged_headers is not None:
-                    unmanaged_headers[tag_match.group(1)] = tag_match.group(2)
-            else:
+            if not (tag_match := TAG_REGEX.match(line)):
                 break
 
+            visitor.visit_header(tag_match.group(1), tag_match.group(2))
+            if unmanaged_headers is not None:
+                unmanaged_headers[tag_match.group(1)] = tag_match.group(2)
         line = handle.readline()
 
     if not found_game:
@@ -1526,10 +1523,11 @@ def read_game(handle: TextIO, *, Visitor: Any = GameBuilder) -> Any:
         in_comment = False
 
         while line:
-            if not in_comment:
-                if line.isspace():
+            if line.isspace():
+                if not in_comment:
                     break
-                elif line.startswith("%"):
+            elif line.startswith("%"):
+                if not in_comment:
                     line = handle.readline()
                     continue
 
@@ -1574,11 +1572,7 @@ def read_game(handle: TextIO, *, Visitor: Any = GameBuilder) -> Any:
                     line = handle.readline()
                 end_index = line.find("}")
                 comment_lines.append(line[:end_index])
-                if "}" in line:
-                    line = line[end_index:]
-                else:
-                    line = ""
-
+                line = line[end_index:] if "}" in line else ""
                 if not skip_variation_depth:
                     visitor.visit_comment("\n".join(comment_lines).strip())
 

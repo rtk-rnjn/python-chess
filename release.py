@@ -65,16 +65,14 @@ def tag_and_push():
             release_txt.write(headline + os.linesep)
 
             for line in changelog_file:
-                if not first_section:
-                    if line.startswith("-------"):
-                        first_section = True
-                else:
+                if first_section:
                     if line.startswith("-------"):
                         break
-                    else:
-                        if not prev_line.startswith("------"):
-                            release_txt.write(prev_line)
+                    if not prev_line.startswith("------"):
+                        release_txt.write(prev_line)
 
+                elif line.startswith("-------"):
+                    first_section = True
                 prev_line = line
 
     with open(release_filename, "r") as release_txt:

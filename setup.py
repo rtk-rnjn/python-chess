@@ -51,12 +51,16 @@ def read_description():
     # Link to the documentation of the specific version.
     description = description.replace(
         "//python-chess.readthedocs.io/en/latest/",
-        "//python-chess.readthedocs.io/en/v{}/".format(chess.__version__))
+        f"//python-chess.readthedocs.io/en/v{chess.__version__}/",
+    )
+
 
     # Use documentation badge for the specific version.
     description = description.replace(
         "//readthedocs.org/projects/python-chess/badge/?version=latest",
-        "//readthedocs.org/projects/python-chess/badge/?version=v{}".format(chess.__version__))
+        f"//readthedocs.org/projects/python-chess/badge/?version=v{chess.__version__}",
+    )
+
 
     # Remove doctest comments.
     description = re.sub(r"\s*# doctest:.*", "", description)

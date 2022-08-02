@@ -373,8 +373,7 @@ def board(board: Optional[chess.BaseBoard] = None, *,
         y = (7 - rank_index if orientation else rank_index) * SQUARE_SIZE + margin
 
         if board is not None:
-            piece = board.piece_at(square)
-            if piece:
+            if piece := board.piece_at(square):
                 href = f"#{chess.COLOR_NAMES[piece.color]}-{chess.PIECE_NAMES[piece.piece_type]}"
                 ET.SubElement(svg, "use", {
                     "href": href,

@@ -64,25 +64,28 @@ class SuicideBoard(chess.Board):
                 chess.popcount(self.occupied_co[not self.turn]))
 
     def is_variant_end(self) -> bool:
-        return not all(has_pieces for has_pieces in self.occupied_co)
+        return not all(self.occupied_co)
 
     def is_variant_win(self) -> bool:
-        if not self.occupied_co[self.turn]:
-            return True
-        else:
-            return self.is_stalemate() and self._material_balance() < 0
+        return (
+            self.is_stalemate() and self._material_balance() < 0
+            if self.occupied_co[self.turn]
+            else True
+        )
 
     def is_variant_loss(self) -> bool:
-        if not self.occupied_co[self.turn]:
-            return False
-        else:
-            return self.is_stalemate() and self._material_balance() > 0
+        return (
+            self.is_stalemate() and self._material_balance() > 0
+            if self.occupied_co[self.turn]
+            else False
+        )
 
     def is_variant_draw(self) -> bool:
-        if not self.occupied_co[self.turn]:
-            return False
-        else:
-            return self.is_stalemate() and self._material_balance() == 0
+        return (
+            self.is_stalemate() and self._material_balance() == 0
+            if self.occupied_co[self.turn]
+            else False
+        )
 
     def has_insufficient_material(self, color: chess.Color) -> bool:
         if self.occupied != self.bishops:
@@ -445,7 +448,7 @@ class HordeBoard(chess.Board):
         self.set_fen(type(self).starting_fen)
 
     def is_variant_end(self) -> bool:
-        return not all(has_pieces for has_pieces in self.occupied_co)
+        return not all(self.occupied_co)
 
     def is_variant_draw(self) -> bool:
         return not self.occupied
@@ -476,11 +479,10 @@ class HordeBoard(chess.Board):
         horde_darkb = chess.popcount(chess.BB_DARK_SQUARES & white & self.bishops)
         horde_lightb = chess.popcount(chess.BB_LIGHT_SQUARES & white & self.bishops)
         horde_bishop_co = chess.WHITE if horde_lightb >= 1 else chess.BLACK
-        horde_num = (
-            pawns + knights + rooks + queens +
-            (horde_darkb if horde_darkb <= 2 else 2) +
-            (horde_lightb if horde_lightb <= 2 else 2)
+        horde_num = (pawns + knights + rooks + queens + min(horde_darkb, 2)) + min(
+            horde_lightb, 2
         )
+
 
         pieces = self.occupied_co[chess.BLACK]
         pieces_pawns = chess.popcount(pieces & self.pawns)
@@ -513,15 +515,17 @@ class HordeBoard(chess.Board):
             # Pawns/queens are never insufficient material when paired with any other
             # piece (a pawn promotes to a queen and delivers mate).
             return False
-        if rooks >= 1 and horde_num >= 2:
-            # A rook is insufficient material only when it is paired with a bishop
-            # against a lone king. The horde can mate in any other case.
-            # A rook on A1 and a bishop on C3 mate a king on B1 when there is a
-            # friendly pawn/opposite-color-bishop/rook/queen on C2.
-            # A rook on B8 and a bishop C3 mate a king on A1 when there is a friendly
-            # knight on A2.
-            if not (horde_num == 2 and rooks == 1 and bishops == 1 and pieces_of_type_not(pieces_sameb_as(horde_bishop_co)) == 1):
-                return False
+        if (
+            rooks >= 1
+            and horde_num >= 2
+            and (
+                horde_num != 2
+                or rooks != 1
+                or bishops != 1
+                or pieces_of_type_not(pieces_sameb_as(horde_bishop_co)) != 1
+            )
+        ):
+            return False
 
         if horde_num == 1:
             if pieces_num == 1:
@@ -608,7 +612,7 @@ class HordeBoard(chess.Board):
                 # A king on A1 is mated by two knights, if it is obstructed by a
                 # pawn/bishop/knight on B2. On the other hand, if black only has
                 # major pieces it is a draw.
-                return not (pieces_pawns + pieces_bishops + pieces_knights >= 1)
+                return pieces_pawns + pieces_bishops + pieces_knights < 1
             elif has_bishop_pair(chess.WHITE):
                 return not (
                     # A king on A1 obstructed by a pawn/bishop on A2 is mated
@@ -972,16 +976,15 @@ class CrazyhouseBoard(chess.Board):
             self.generate_legal_drops(from_mask & to_mask))
 
     def parse_san(self, san: str) -> chess.Move:
-        if "@" in san:
-            uci = san.rstrip("+#")
-            if uci[0] == "@":
-                uci = "P" + uci
-            move = chess.Move.from_uci(uci)
-            if not self.is_legal(move):
-                raise ValueError(f"illegal drop san: {san!r} in {self.fen()}")
-            return move
-        else:
+        if "@" not in san:
             return super().parse_san(san)
+        uci = san.rstrip("+#")
+        if uci[0] == "@":
+            uci = f"P{uci}"
+        move = chess.Move.from_uci(uci)
+        if not self.is_legal(move):
+            raise ValueError(f"illegal drop san: {san!r} in {self.fen()}")
+        return move
 
     def has_insufficient_material(self, color: chess.Color) -> bool:
         # In practice, no material can leave the game, but this is easy to
@@ -1017,7 +1020,7 @@ class CrazyhouseBoard(chess.Board):
         black_pocket = CrazyhousePocket(c for c in pocket_part if not c.isupper())
 
         # Set FEN and pockets.
-        super().set_fen(position_part + " " + info_part)
+        super().set_fen(f"{position_part} {info_part}")
         self.pockets[chess.WHITE] = white_pocket
         self.pockets[chess.BLACK] = black_pocket
 
